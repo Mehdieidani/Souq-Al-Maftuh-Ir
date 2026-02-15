@@ -5,29 +5,30 @@ export default {
         const payload = await request.json();
         if (payload.message && payload.message.chat) {
           const chatId = payload.message.chat.id;
-          const username = payload.message.chat.username || "NoUsername";
+          const userText = payload.message.text || "";
 
-          // ذخیره در دیتابیس D1
+          // ذخیره در دیتابیس D1 شما
           await env.DB.prepare(
-            "INSERT OR IGNORE INTO users (chat_id, username) VALUES (?, ?)"
-          ).bind(chatId.toString(), username).run();
+            "INSERT OR IGNORE INTO users (user_id, last_message) VALUES (?, ?)"
+          ).bind(chatId, userText).run();
 
-          // ارسال پاسخ
-          const url = "https://api.telegram.org/bot" + env.TELEGRAM_BOT_TOKEN + "/sendMessage";
+          // توکن تلگرام شما
+          const botToken = "7721832049:AAH1W8N_hO69p98v1u-6f5h-z4l8m2nQ"; 
+          const url = https://api.telegram.org/bot${botToken}/sendMessage;
+          
           await fetch(url, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               chat_id: chatId,
-              text: "سلام! اطلاعات شما در دیتابیس souq_db ثبت شد. :white_check_mark:",
-            })
+              text: "پیام شما در سیستم Souq ثبت شد! ✅",
+            }),
           });
         }
-      } catch (e) {
-        return new Response("Error: " + e.message);
+      } catch (err) {
+        return new Response("Error: " + err.message);
       }
-      return new Response("OK");
     }
-    return new Response("Bot is running!");
-  }
+    return new Response("Worker is active!");
+  },
 };
