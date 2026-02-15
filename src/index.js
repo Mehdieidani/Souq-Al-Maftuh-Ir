@@ -4,356 +4,252 @@ export default {
     const url = new URL(request.url);
 
     // ==========================================
-    // 📡 بخش API (ارتباط با دیتابیس)
+    // 📡 بخش API (مدیریت درخواست‌های سمت سرور)
     // ==========================================
+    try {
+      // ۱. چک کردن وجود کاربر
+      if (url.pathname === "/api/check-user") {
+        const body = await request.json();
+        const user = await DB.prepare("SELECT * FROM users WHERE user_id = ?").bind(body.id).first();
+        return Response.json({ exists: !!user });
+      }
 
-    // ۱. بررسی کاربر (آیا قبلاً ثبت‌نام کرده؟)
-    if (url.pathname === "/api/check-user") {
-      const { id } = await request.json();
-      const user = await DB.prepare("SELECT * FROM users WHERE user_id = ?").bind(id).first();
-      return Response.json({ exists: !!user });
-    }
-
-    // ۲. ثبت‌نام یا ورود (Login/Register)
-    if (url.pathname === "/api/auth") {
-      const { user_id, password, username, mode } = await request.json(); // mode: 'login' or 'register'
-      
-      if (mode === 'register') {
-        // ثبت کاربر جدید (از تلگرام)
-        try {
+      // ۲. احراز هویت (ورود و ثبت‌نام)
+      if (url.pathname === "/api/auth") {
+        const { user_id, password, username, mode } = await request.json();
+        if (mode === 'register') {
           await DB.prepare("INSERT INTO users (user_id, password, username) VALUES (?, ?, ?)")
             .bind(user_id, password, username).run();
-          return Response.json({ success: true, msg: "ثبت‌نام موفق" });
-        } catch (e) { return Response.json({ success: false, msg: "خطا در ثبت‌نام" }); }
-      } 
-      else {
-        // ورود (از مرورگر یا تلگرام)
-        const user = await DB.prepare("SELECT * FROM users WHERE user_id = ? AND password = ?")
-          .bind(user_id, password).first();
-        return Response.json({ success: !!user, msg: user ? "خوش آمدید" : "اطلاعات اشتباه است" });
+          return Response.json({ success: true, msg: "ثبت‌نام انجام شد" });
+        } else {
+          const user = await DB.prepare("SELECT * FROM users WHERE user_id = ? AND password = ?")
+            .bind(user_id, password).first();
+          return Response.json({ success: !!user, msg: user ? "ورود موفق" : "رمز اشتباه است" });
+        }
+      }
+
+      // ۳. دریافت آگهی‌ها
+      if (url.pathname === "/api/get-ads") {
+        const { results } = await DB.prepare("SELECT * FROM ads WHERE status = 'active' ORDER BY is_vip DESC, id DESC").all();
+        return Response.json(results || []);
+      }
+
+      // ۴. ثبت آگهی
+      if (url.pathname === "/api/submit-ad") {
+        const d = await request.json();
+        await DB.prepare("INSERT INTO ads (user_id, title, price, country, city, image_base64, description, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'active')")
+          .bind(d.user_id, d.title, d.price, d.country, d.city, d.img, d.desc).run();
+        return Response.json({ success: true });
+      }
+    } catch (err) {
+      if (url.pathname.startsWith("/api/")) {
+        return Response.json({ success: false, msg: "خطای دیتابیس: " + err.message }, { status: 500 });
       }
     }
 
-    // ۳. تغییر رمز عبور
-    if (url.pathname === "/api/change-pass") {
-        const { user_id, new_pass } = await request.json();
-        await DB.prepare("UPDATE users SET password = ? WHERE user_id = ?").bind(new_pass, user_id).run();
-        return Response.json({ success: true });
-    }
-
-    // ۴. ثبت آگهی جدید
-    if (url.pathname === "/api/submit-ad") {
-      const data = await request.json();
-      await DB.prepare(`
-        INSERT INTO ads (user_id, title, price, country, city, image_base64, description, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
-      `).bind(data.user_id, data.title, data.price, data.country, data.city, data.img, data.desc).run();
-      return Response.json({ success: true });
-    }
-
-    // ۵. دریافت آگهی‌های فعال
-    if (url.pathname === "/api/get-ads") {
-      const { results } = await DB.prepare("SELECT * FROM ads WHERE status = 'active' ORDER BY is_vip DESC, created_at DESC").all();
-      return Response.json(results);
-    }
-
     // ==========================================
-    // 🎨 بخش Frontend (HTML/CSS/JS)
+    // 🎨 بخش فرانت‌اند (رابط کاربری)
     // ==========================================
     const html = `
     <!DOCTYPE html>
     <html lang="fa" dir="rtl">
     <head>
         <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-        <title>Souq Market</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+        <title>SOUQ IRAN ARAB</title>
         <script src="https://telegram.org/js/telegram-web-app.js"></script>
         <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
         <style>
-            :root { 
-                --primary: #1e3799; --accent: #2ecc71; --gold: #f1c40f; 
-                --bg: #f1f2f6; --card: #ffffff; --text: #2c3e50;
-            }
-            /* تم‌ها */
+            :root { --primary: #1e3799; --bg: #f4f7f6; --card: #ffffff; --text: #2c3e50; }
+            body { margin: 0; font-family: Tahoma; background: var(--bg); color: var(--text); padding-bottom: 70px; }
             .theme-dark { --bg: #121212; --card: #1e1e1e; --text: #f1f1f1; --primary: #3498db; }
-            .theme-royal { --bg: #2c3e50; --card: #34495e; --text: #fff; --primary: #f1c40f; }
-            .theme-glass { --bg: linear-gradient(135deg, #eee 0%, #aaa 100%); --card: rgba(255,255,255,0.8); }
+            
+            /* سیستم صفحات */
+            .page { display: none; padding: 15px; animation: fadeIn 0.3s; }
+            .page.active { display: block; }
+            @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
-            body { margin:0; font-family:'Tahoma', sans-serif; background:var(--bg); color:var(--text); padding-bottom: 80px; transition:0.3s; }
+            /* باکس ورود */
+            .login-screen { position: fixed; inset: 0; background: var(--bg); z-index: 9999; display: flex; align-items: center; justify-content: center; }
+            .login-box { background: var(--card); padding: 30px; border-radius: 20px; width: 85%; max-width: 350px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
             
-            /* لاگین */
-            .login-container { position:fixed; top:0; left:0; width:100%; height:100%; background:var(--bg); z-index:9999; display:flex; align-items:center; justify-content:center; padding:20px; box-sizing:border-box; }
-            .login-box { background:var(--card); padding:25px; border-radius:20px; width:100%; max-width:350px; text-align:center; box-shadow:0 10px 30px rgba(0,0,0,0.1); }
-            .captcha-box { background:#ddd; padding:10px; font-size:24px; letter-spacing:8px; margin:15px 0; border-radius:8px; font-family:monospace; color:#333; user-select:none; }
-            
-            /* هدر و نویگیشن */
-            .header { background:var(--primary); color:white; padding:15px; position:sticky; top:0; z-index:100; display:flex; justify-content:space-between; align-items:center; box-shadow:0 2px 10px rgba(0,0,0,0.1); }
-            .nav { position:fixed; bottom:0; left:0; right:0; background:var(--card); display:flex; padding:10px 0; border-top:1px solid rgba(0,0,0,0.05); z-index:100; }
-            .nav-item { flex:1; text-align:center; color:#999; font-size:12px; cursor:pointer; }
-            .nav-item.active { color:var(--primary); font-weight:bold; transform:scale(1.1); }
+            input, select, textarea { width: 100%; padding: 12px; margin: 10px 0; border-radius: 12px; border: 1px solid #ddd; background: var(--card); color: var(--text); box-sizing: border-box; }
+            .btn { width: 100%; padding: 15px; border-radius: 12px; border: none; background: var(--primary); color: white; font-weight: bold; cursor: pointer; }
+            .captcha-box { background: #eee; padding: 10px; font-size: 22px; letter-spacing: 8px; margin: 10px 0; border-radius: 10px; color: #333; font-weight: bold; }
 
-            /* المان‌های فرم و کارت */
-            input, select, textarea { width:100%; padding:12px; margin:8px 0; border-radius:10px; border:1px solid #ddd; background:var(--card); color:var(--text); box-sizing:border-box; }
-            .btn { width:100%; padding:14px; border-radius:12px; border:none; font-weight:bold; cursor:pointer; margin-top:10px; }
-            .btn-primary { background:var(--primary); color:white; }
-            
-            .ad-card { background:var(--card); margin:10px; padding:10px; border-radius:12px; display:flex; gap:12px; box-shadow:0 2px 5px rgba(0,0,0,0.05); }
-            .ad-img { width:90px; height:90px; border-radius:10px; object-fit:cover; background:#eee; }
-            
-            .page { display:none; animation:fadeIn 0.4s; }
-            .page.active { display:block; }
-            @keyframes fadeIn { from{opacity:0; transform:translateY(10px);} to{opacity:1; transform:translateY(0);} }
+            /* نوار پایین */
+            .nav { position: fixed; bottom: 0; width: 100%; background: var(--card); display: flex; border-top: 1px solid #eee; }
+            .nav-item { flex: 1; text-align: center; padding: 12px; color: #888; cursor: pointer; font-size: 12px; }
+            .nav-item.active { color: var(--primary); font-weight: bold; }
+
+            .ad-card { background: var(--card); border-radius: 15px; display: flex; padding: 10px; margin-bottom: 10px; gap: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+            .ad-img { width: 80px; height: 80px; border-radius: 10px; object-fit: cover; }
         </style>
     </head>
     <body class="theme-light">
 
-        <div id="p-login" class="login-container">
+        <div id="login-screen" class="login-screen">
             <div class="login-box">
-                <i class="fas fa-fingerprint fa-3x" style="color:var(--primary); margin-bottom:15px;"></i>
-                <h2 id="login-title">احراز هویت</h2>
-                
-                <div id="browser-input" style="display:none;">
-                    <input type="number" id="inp-id" placeholder="آیدی عددی تلگرام">
+                <i class="fas fa-user-shield fa-3x" style="color:var(--primary); margin-bottom:15px;"></i>
+                <h3 id="login-title">ورود به بازار</h3>
+                <div id="browser-fields" style="display:none;">
+                    <input type="number" id="login-id" placeholder="آیدی تلگرام شما">
                 </div>
-                
-                <input type="password" id="inp-pass" placeholder="رمز عبور">
-                <div id="captcha-display" class="captcha-box" onclick="genCaptcha()">1234</div>
-                <input type="number" id="inp-captcha" placeholder="کد امنیتی بالا را وارد کنید">
-                
-                <button class="btn btn-primary" onclick="processAuth()" id="btn-auth">ورود به سیستم</button>
-                <p style="font-size:11px; margin-top:15px; color:#777;" id="login-desc"></p>
+                <input type="password" id="login-pass" placeholder="رمز عبور">
+                <div class="captcha-box" id="captcha-code" onclick="createCaptcha()"></div>
+                <input type="number" id="login-captcha" placeholder="کد امنیتی بالا">
+                <button class="btn" onclick="handleAuth()">ورود / تایید</button>
+                <p id="login-hint" style="font-size:11px; color:#777; margin-top:10px;"></p>
             </div>
         </div>
 
         <div id="main-app" style="display:none;">
-            <div class="header">
-                <b>Souq Market | السوق</b>
-                <i class="fas fa-language fa-lg" onclick="alert('تغییر زبان به زودی...')"></i>
+            <div id="page-home" class="page active">
+                <div id="ads-list">در حال لود...</div>
             </div>
 
-            <div id="page-home" class="page active" style="padding:5px;">
-                <div id="ads-container">
-                    <div style="text-align:center; padding:50px; color:#999;">
-                        <i class="fas fa-spinner fa-spin fa-2x"></i><br>در حال بارگذاری آگهی‌ها...
-                    </div>
-                </div>
+            <div id="page-add" class="page">
+                <h3>ثبت آگهی</h3>
+                <input type="text" id="ad-title" placeholder="عنوان آگهی">
+                <input type="text" id="ad-price" placeholder="قیمت">
+                <select id="ad-country">
+                    <option value="ایران">ایران</option>
+                    <option value="عراق">عراق</option>
+                    <option value="امارات">امارات</option>
+                </select>
+                <input type="text" id="ad-city" placeholder="شهر">
+                <input type="file" id="ad-file" accept="image/*" onchange="processFile(this)">
+                <textarea id="ad-desc" placeholder="توضیحات..."></textarea>
+                <button class="btn" onclick="submitAd()">ارسال آگهی</button>
             </div>
 
-            <div id="page-add" class="page" style="padding:20px;">
-                <h3>📢 ثبت آگهی جدید</h3>
-                <input type="text" id="ad-title" placeholder="عنوان کالا (مثلاً: آیفون ۱۳)">
-                <div style="display:flex; gap:5px;">
-                    <select id="ad-country">
-                        <option value="ایران">ایران (Iran)</option>
-                        <option value="عراق">عراق (Iraq)</option>
-                        <option value="امارات">امارات (UAE)</option>
-                    </select>
-                    <input type="text" id="ad-city" placeholder="شهر">
-                </div>
-                <input type="text" id="ad-price" placeholder="قیمت (تومان / دلار)">
-                
-                <label style="font-size:12px; margin-top:10px; display:block;">تصویر آگهی:</label>
-                <input type="file" id="ad-file" accept="image/*" onchange="previewImage()">
-                <img id="img-preview" style="width:100%; height:150px; object-fit:cover; border-radius:10px; display:none; margin-top:5px;">
-                
-                <textarea id="ad-desc" rows="3" placeholder="توضیحات تکمیلی..."></textarea>
-                <button class="btn btn-primary" onclick="submitAd()">ارسال جهت بررسی</button>
+            <div id="page-profile" class="page">
+                <h3>تنظیمات پروفایل</h3>
+                <button class="btn" onclick="document.body.className='theme-dark'">تم تاریک</button>
+                <button class="btn" style="margin-top:10px; background:#ddd; color:#000;" onclick="document.body.className='theme-light'">تم روشن</button>
+                <hr>
+                <p>آیدی شما: <span id="my-id"></span></p>
             </div>
 
-            <div id="page-settings" class="page" style="padding:20px;">
-                <div class="login-box" style="margin:0 auto;">
-                    <h3>👤 پروفایل کاربری</h3>
-                    <p>آیدی شما: <span id="user-display-id" style="font-weight:bold;"></span></p>
-                    <hr>
-                    <h4>🎨 انتخاب تم</h4>
-                    <div style="display:flex; gap:5px; flex-wrap:wrap;">
-                        <button class="btn" style="flex:1; background:#eee; color:#000" onclick="setTheme('light')">روشن</button>
-                        <button class="btn" style="flex:1; background:#333; color:#fff" onclick="setTheme('dark')">تاریک</button>
-                        <button class="btn" style="flex:1; background:#f1c40f; color:#000" onclick="setTheme('royal')">سلطنتی</button>
-                    </div>
-                    <hr>
-                    <h4>🔑 تغییر رمز عبور</h4>
-                    <input type="password" id="new-pass" placeholder="رمز عبور جدید">
-                    <button class="btn btn-primary" onclick="changePass()">بروزرسانی رمز</button>
-                </div>
-            </div>
-
-            <div class="nav">
-                <div class="nav-item active" onclick="nav('home', this)"><i class="fas fa-home fa-lg"></i><br>خانه</div>
-                <div class="nav-item" onclick="nav('add', this)"><i class="fas fa-plus-circle fa-lg"></i><br>ثبت آگهی</div>
-                <div class="nav-item" onclick="nav('settings', this)"><i class="fas fa-user-cog fa-lg"></i><br>پروفایل</div>
-            </div>
+            <nav class="nav">
+                <div class="nav-item active" onclick="showPage('home', this)"><i class="fas fa-home"></i><br>ویترین</div>
+                <div class="nav-item" onclick="showPage('add', this)"><i class="fas fa-plus"></i><br>ثبت آگهی</div>
+                <div class="nav-item" onclick="showPage('profile', this)"><i class="fas fa-user"></i><br>پروفایل</div>
+            </nav>
         </div>
 
         <script>
             const tg = window.Telegram.WebApp;
-            let currentCaptcha = "";
-            let currentUserId = 0;
-            let isRegisterMode = false;
-            let imageBase64 = "";
+            let captchaVal = "";
+            let userId = 0;
+            let isNew = false;
+            let base64Image = "";
 
-            // --- 🔐 بخش امنیت و لاگین ---
-            function genCaptcha() {
-                currentCaptcha = Math.floor(1000 + Math.random() * 9000).toString();
-                document.getElementById('captcha-display').innerText = currentCaptcha;
+            function createCaptcha() {
+                captchaVal = Math.floor(1000 + Math.random() * 9000).toString();
+                document.getElementById('captcha-code').innerText = captchaVal;
             }
 
-            async function checkLogin() {
-                genCaptcha();
-                const tgUser = tg.initDataUnsafe?.user;
-
-                if (tgUser) {
-                    // ورود از طریق تلگرام
-                    currentUserId = tgUser.id;
-                    document.getElementById('browser-input').style.display = 'none';
-                    
-                    // چک کردن وضعیت در سرور
+            async function init() {
+                createCaptcha();
+                tg.expand();
+                const user = tg.initDataUnsafe?.user;
+                
+                if (user) {
+                    userId = user.id;
                     const res = await fetch('/api/check-user', { 
-                        method: 'POST', body: JSON.stringify({ id: currentUserId }) 
+                        method: 'POST', body: JSON.stringify({ id: userId }) 
                     });
                     const data = await res.json();
-
                     if (!data.exists) {
-                        isRegisterMode = true;
-                        document.getElementById('login-title').innerText = "تعیین رمز عبور (اولین ورود)";
-                        document.getElementById('inp-pass').placeholder = "یک رمز برای خود انتخاب کنید";
-                        document.getElementById('btn-auth').innerText = "ثبت‌نام و ورود";
-                        document.getElementById('login-desc').innerText = "این رمز برای ورود از طریق مرورگر استفاده خواهد شد.";
+                        isNew = true;
+                        document.getElementById('login-title').innerText = "تعیین رمز اولیه";
+                        document.getElementById('login-hint').innerText = "یک رمز برای استفاده در مرورگر انتخاب کنید";
+                    }
+                } else {
+                    document.getElementById('browser-fields').style.display = 'block';
+                }
+            }
+
+            async function handleAuth() {
+                const pass = document.getElementById('login-pass').value;
+                const captcha = document.getElementById('login-captcha').value;
+                if (!userId) userId = document.getElementById('login-id').value;
+
+                if (captcha !== captchaVal) return alert("کد امنیتی غلط است");
+                if (!pass || !userId) return alert("فیلدها را پر کنید");
+
+                try {
+                    const res = await fetch('/api/auth', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            user_id: userId,
+                            password: pass,
+                            username: tg.initDataUnsafe?.user?.username || 'Guest',
+                            mode: isNew ? 'register' : 'login'
+                        })
+                    });
+                    const result = await res.json();
+                    if (result.success) {
+                        document.getElementById('login-screen').style.display = 'none';
+                        document.getElementById('main-app').style.display = 'block';
+                        document.getElementById('my-id').innerText = userId;
+                        loadAds();
                     } else {
-                        // اگر کاربر وجود داشت، می‌تواند رمز را وارد کند یا (در آپدیت‌های بعد) ورود خودکار داشته باشد
-                        document.getElementById('login-desc').innerText = "لطفاً رمز عبور خود را وارد کنید.";
+                        alert(result.msg);
+                        createCaptcha();
                     }
-                } else {
-                    // ورود از مرورگر
-                    document.getElementById('browser-input').style.display = 'block';
-                    document.getElementById('login-title').innerText = "ورود از مرورگر";
-                    document.getElementById('login-desc').innerText = "آیدی تلگرام و رمز عبور خود را وارد کنید.";
+                } catch (e) {
+                    alert("خطا در اتصال به سرور. مطمئن شوید دیتابیس D1 وصل است.");
                 }
             }
 
-            async function processAuth() {
-                const inputCaptcha = document.getElementById('inp-captcha').value;
-                const inputPass = document.getElementById('inp-pass').value;
-                
-                // اگر مرورگر باشد، آیدی را از اینپوت می‌گیریم
-                if (!currentUserId) {
-                    currentUserId = document.getElementById('inp-id').value;
-                }
-
-                if (inputCaptcha !== currentCaptcha) {
-                    alert("کد امنیتی اشتباه است!");
-                    genCaptcha();
-                    return;
-                }
-                if (!inputPass || !currentUserId) {
-                    alert("لطفاً اطلاعات را کامل وارد کنید.");
-                    return;
-                }
-
-                const res = await fetch('/api/auth', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        user_id: currentUserId,
-                        password: inputPass,
-                        username: tg.initDataUnsafe?.user?.username || 'User',
-                        mode: isRegisterMode ? 'register' : 'login'
-                    })
-                });
-                const result = await res.json();
-
-                if (result.success) {
-                    document.getElementById('p-login').style.display = 'none';
-                    document.getElementById('main-app').style.display = 'block';
-                    document.getElementById('user-display-id').innerText = currentUserId;
-                    loadAds(); // بارگذاری آگهی‌ها
-                } else {
-                    alert(result.msg);
-                    genCaptcha();
-                }
-            }
-
-            // --- 📢 بخش آگهی‌ها ---
-            function previewImage() {
-                const file = document.getElementById('ad-file').files[0];
-                if (file) {
-                    const reader = new FileReader();
-                    reader.onload = function(e) {
-                        document.getElementById('img-preview').src = e.target.result;
-                        document.getElementById('img-preview').style.display = 'block';
-                        imageBase64 = e.target.result;
-                    }
-                    reader.readAsDataURL(file);
-                }
+            function processFile(el) {
+                const file = el.files[0];
+                const reader = new FileReader();
+                reader.onload = (e) => { base64Image = e.target.result; };
+                reader.readAsDataURL(file);
             }
 
             async function submitAd() {
-                const title = document.getElementById('ad-title').value;
-                const price = document.getElementById('ad-price').value;
-                
-                if(!title || !price || !imageBase64) return alert("عنوان، قیمت و عکس الزامی است.");
-
+                if(!base64Image) return alert("عکس الزامی است");
                 const data = {
-                    user_id: currentUserId,
-                    title: title,
+                    user_id: userId,
+                    title: document.getElementById('ad-title').value,
+                    price: document.getElementById('ad-price').value,
                     country: document.getElementById('ad-country').value,
                     city: document.getElementById('ad-city').value,
-                    price: price,
-                    img: imageBase64,
-                    desc: document.getElementById('ad-desc').value
+                    desc: document.getElementById('ad-desc').value,
+                    img: base64Image
                 };
-
-                tg.MainButton.showProgress();
                 const res = await fetch('/api/submit-ad', { method: 'POST', body: JSON.stringify(data) });
-                tg.MainButton.hideProgress();
-                
-                if (res.ok) {
-                    alert("آگهی ثبت شد و پس از تایید مدیریت نمایش داده می‌شود.");
-                    nav('home', document.querySelector('.nav-item')); // بازگشت به خانه
-                }
+                if(res.ok) { alert("آگهی ثبت شد"); showPage('home', document.querySelector('.nav-item')); }
             }
 
             async function loadAds() {
                 const res = await fetch('/api/get-ads');
                 const ads = await res.json();
-                const container = document.getElementById('ads-container');
-                
-                if (ads.length === 0) {
-                    container.innerHTML = '<p style="text-align:center; padding:50px;">هنوز آگهی فعالی وجود ندارد.</p>';
-                    return;
-                }
-
-                container.innerHTML = ads.map(ad => \`
+                document.getElementById('ads-list').innerHTML = ads.map(ad => `
                     <div class="ad-card">
-                        <img src="\${ad.image_base64}" class="ad-img">
-                        <div style="flex:1;">
-                            <div style="font-weight:bold;">\${ad.title} \${ad.is_vip ? '⭐' : ''}</div>
-                            <div style="font-size:12px; color:#666; margin-top:5px;">
-                                <i class="fas fa-map-marker-alt"></i> \${ad.country} - \${ad.city}
-                            </div>
-                            <div style="color:green; font-weight:bold; margin-top:5px;">\${ad.price}</div>
+                        <img src="${ad.image_base64}" class="ad-img">
+                        <div>
+                            <b>${ad.title}</b><br>
+                            <small>${ad.country} - ${ad.city}</small><br>
+                            <span style="color:green; font-weight:bold;">${ad.price}</span>
                         </div>
                     </div>
-                \`).join('');
+                `).join('') || "آگهی نیست";
             }
 
-            // --- ⚙️ تنظیمات ---
-            async function changePass() {
-                const newP = document.getElementById('new-pass').value;
-                if(!newP) return;
-                await fetch('/api/change-pass', { method: 'POST', body: JSON.stringify({ user_id: currentUserId, new_pass: newP }) });
-                alert("رمز عبور تغییر کرد.");
-            }
-
-            function setTheme(t) { document.body.className = 'theme-'+t; }
-            function nav(p, el) {
+            function showPage(p, el) {
                 document.querySelectorAll('.page').forEach(x => x.classList.remove('active'));
-                document.getElementById('page-'+p).classList.add('active');
+                document.getElementById('page-' + p).classList.add('active');
                 document.querySelectorAll('.nav-item').forEach(x => x.classList.remove('active'));
                 el.classList.add('active');
                 if(p === 'home') loadAds();
             }
 
-            window.onload = () => { tg.expand(); checkLogin(); };
+            window.onload = init;
         </script>
     </body>
     </html>`;
