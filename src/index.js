@@ -3,43 +3,60 @@ export default {
     const { DB } = env;
     const url = new URL(request.url);
 
+    // هدرهای لازم برای اینکه دکمه‌ها در تلگرام کار کنند (CORS)
+    const corsHeaders = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+      "Content-Type": "application/json;charset=UTF-8"
+    };
+
+    if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
     try {
-      // --- API: مدیریت آگهی‌ها و کاربران ---
+      // --- بخش API ---
+      
+      // ۱. شناسایی کاربر
       if (url.pathname === "/api/init") {
         const body = await request.json();
         await DB.prepare("INSERT OR IGNORE INTO users (user_id, username) VALUES (?, ?)")
-          .bind(body.id, body.user).run();
-        const user = await DB.prepare("SELECT * FROM users WHERE user_id = ?").bind(body.id).first();
-        return Response.json(user);
+          .bind(Number(body.id), body.user || 'Guest').run();
+        const user = await DB.prepare("SELECT * FROM users WHERE user_id = ?").bind(Number(body.id)).first();
+        return Response.json(user, { headers: corsHeaders });
       }
 
+      // ۲. دریافت آگهی‌ها (فقط تایید شده‌ها)
       if (url.pathname === "/api/get-ads") {
         const { results } = await DB.prepare("SELECT * FROM ads WHERE status = 'active' ORDER BY is_featured DESC, id DESC").all();
-        return Response.json(results);
+        return Response.json(results || [], { headers: corsHeaders });
       }
 
+      // ۳. ثبت آگهی جدید
       if (url.pathname === "/api/submit-ad") {
         const d = await request.json();
-        await DB.prepare("INSERT INTO ads (user_id, title, category, price, currency, country, city, image_base64, description, is_featured) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-          .bind(d.uid, d.title, d.cat, d.price, d.curr, d.country, d.city, d.img, d.desc, d.vip).run();
-        return Response.json({ success: true });
+        await DB.prepare("INSERT INTO ads (user_id, title, category, price, currency, country, city, image_base64, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+          .bind(Number(d.uid), d.title, d.cat, d.price, d.curr, d.country, d.city, d.img, d.desc).run();
+        return Response.json({ success: true }, { headers: corsHeaders });
       }
 
-      // --- API: پنل مدیریت (ساده شده برای امنیت) ---
+      // ۴. پنل مدیریت (نمایش آگهی‌های در انتظار تایید)
       if (url.pathname === "/api/admin/pending") {
         const { results } = await DB.prepare("SELECT * FROM ads WHERE status = 'pending'").all();
-        return Response.json(results);
+        return Response.json(results || [], { headers: corsHeaders });
       }
-      
+
+      // ۵. تایید یا رد آگهی توسط مدیر
       if (url.pathname === "/api/admin/approve") {
         const { id, action } = await request.json();
         await DB.prepare("UPDATE ads SET status = ? WHERE id = ?").bind(action, id).run();
-        return Response.json({ success: true });
+        return Response.json({ success: true }, { headers: corsHeaders });
       }
 
-    } catch (e) { return Response.json({ error: e.message }, { status: 500 }); }
+    } catch (e) {
+      return Response.json({ error: e.message }, { status: 500, headers: corsHeaders });
+    }
 
-    // --- رابط کاربری (UI) ---
+    // --- بخش ظاهر (UI حرفه‌ای) ---
     const html = `
     <!DOCTYPE html>
     <html lang="fa" dir="rtl">
@@ -50,220 +67,164 @@ export default {
         <script src="https://telegram.org/js/telegram-web-app.js"></script>
         <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
         <style>
-            :root { --primary: #007aff; --vip: #f1c40f; --bg: #f2f2f7; --card: #ffffff; }
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto; background: var(--bg); margin: 0; color: #1c1c1e; }
-            
-            /* Glassmorphism Header */
-            .header { background: rgba(255,255,255,0.8); backdrop-filter: blur(10px); padding: 15px; position: sticky; top: 0; z-index: 100; border-bottom: 1px solid #d1d1d6; display: flex; justify-content: space-between; align-items: center; }
-            
-            .categories { display: flex; overflow-x: auto; padding: 10px; gap: 10px; scrollbar-width: none; }
-            .cat-item { background: var(--card); padding: 8px 15px; border-radius: 20px; white-space: nowrap; font-size: 13px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); cursor: pointer; border: 1px solid transparent; }
-            .cat-item.active { background: var(--primary); color: white; }
-
-            .ad-card { background: var(--card); margin: 10px; border-radius: 15px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05); position: relative; display: flex; flex-direction: column; }
-            .ad-img { width: 100%; height: 200px; object-fit: cover; }
-            .ad-info { padding: 12px; }
-            .badge-vip { position: absolute; top: 10px; right: 10px; background: var(--vip); color: #000; padding: 4px 8px; border-radius: 8px; font-size: 10px; font-weight: bold; }
-
-            .price-tag { color: var(--primary); font-weight: bold; font-size: 17px; }
-            
-            /* Bottom Nav */
-            .nav { position: fixed; bottom: 0; width: 100%; background: rgba(255,255,255,0.9); backdrop-filter: blur(10px); display: flex; border-top: 1px solid #d1d1d6; padding-bottom: env(safe-area-inset-bottom); }
-            .nav-item { flex: 1; text-align: center; padding: 10px; color: #8e8e93; font-size: 11px; }
-            .nav-item.active { color: var(--primary); }
-
-            .btn-main { background: var(--primary); color: white; border: none; padding: 15px; border-radius: 12px; width: 100%; font-weight: bold; font-size: 16px; margin-top: 10px; }
-            
-            /* Currency Modal */
-            #tool-box { background: #1c1c1e; color: white; margin: 10px; padding: 15px; border-radius: 15px; display: none; }
-            
-            .page { display: none; padding-bottom: 80px; animation: slideUp 0.3s ease; }
-            @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-            .active-page { display: block; }
+            :root { --p: #007aff; --vip: #f1c40f; --bg: #f2f2f7; }
+            body { font-family: sans-serif; background: var(--bg); margin: 0; padding-bottom: 80px; user-select: none; }
+            .header { background: white; padding: 15px; position: sticky; top: 0; z-index: 100; border-bottom: 1px solid #ddd; text-align: center; font-weight: bold; }
+            .page { display: none; padding: 15px; animation: fadeIn 0.3s; }
+            .active { display: block; }
+            .ad-card { background: white; border-radius: 15px; margin-bottom: 15px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+            .ad-img { width: 100%; height: 180px; object-fit: cover; }
+            .ad-body { padding: 12px; }
+            .price { color: var(--p); font-weight: bold; font-size: 18px; }
+            .nav { position: fixed; bottom: 0; width: 100%; background: white; display: flex; border-top: 1px solid #ddd; padding-bottom: 15px; }
+            .nav-item { flex: 1; text-align: center; padding: 10px; color: #888; font-size: 11px; cursor: pointer; }
+            .nav-item.active { color: var(--p); }
+            input, select, textarea { width: 100%; padding: 12px; margin: 8px 0; border-radius: 10px; border: 1px solid #ddd; box-sizing: border-box; font-family: inherit; }
+            .btn { width: 100%; padding: 15px; background: var(--p); color: white; border: none; border-radius: 12px; font-weight: bold; cursor: pointer; }
+            .admin-btn { padding: 5px 10px; border-radius: 5px; border: none; color: white; cursor: pointer; margin: 5px; }
+            @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         </style>
     </head>
     <body>
 
-    <div class="header">
-        <span style="font-weight: 800; font-size: 18px;">SOUQ <span style="color:var(--primary)">PRO</span></span>
-        <div id="user-badge" style="font-size: 12px; background: #eee; padding: 5px 10px; border-radius: 15px;">...</div>
+    <div class="header">SOUQ <span style="color:var(--p)">PRO</span></div>
+
+    <div id="p-home" class="page active">
+        <div id="ad-list">در حال بارگذاری...</div>
     </div>
 
-    <div class="categories">
-        <div class="cat-item active" onclick="filterCat('همه')">همه</div>
-        <div class="cat-item" onclick="filterCat('فروش')">🛍️ خرید و فروش</div>
-        <div class="cat-item" onclick="filterCat('اشتغال')">💼 اشتغال</div>
-        <div class="cat-item" onclick="filterCat('خدمات')">🛠️ خدمات</div>
-        <div class="cat-item" onclick="filterCat('املاک')">🏠 املاک</div>
-        <div class="cat-item" onclick="filterCat('خودرو')">🚗 خودرو</div>
-    </div>
-
-    <div id="tool-box">
-        <div style="display: flex; justify-content: space-between;">
-            <span><i class="fas fa-robot"></i> دستیار هوشمند</span>
-            <i class="fas fa-times" onclick="toggleTools()"></i>
-        </div>
-        <div style="margin-top: 10px;">
-            <input type="number" id="conv-val" placeholder="مقدار..." style="width:60%; padding:5px;">
-            <select id="conv-type" style="padding:5px;">
-                <option value="تومان-دینار">تومان به دینار</option>
-                <option value="درهم-تومان">درهم به تومان</option>
-            </select>
-            <button onclick="convertCurr()" style="padding:5px;">تبدیل</button>
-            <p id="conv-res" style="color:var(--vip); font-size:14px; margin-top:5px;"></p>
-        </div>
-    </div>
-
-    <div id="page-home" class="page active-page">
-        <div id="ad-container"></div>
-    </div>
-
-    <div id="page-add" class="page" style="padding: 20px;">
-        <h2>ثبت آگهی جدید</h2>
-        <input type="text" id="add-title" placeholder="عنوان آگهی">
-        <select id="add-cat">
-            <option>فروش</option><option>اشتغال</option><option>خدمات</option><option>املاک</option>
+    <div id="p-add" class="page">
+        <h3>📢 ثبت آگهی جدید</h3>
+        <input type="text" id="a-title" placeholder="عنوان آگهی">
+        <select id="a-cat">
+            <option>خرید و فروش</option><option>اشتغال</option><option>خدمات</option><option>املاک</option><option>خودرو</option>
         </select>
-        <div style="display: flex; gap: 5px;">
-            <input type="text" id="add-price" placeholder="قیمت" style="flex:2;">
-            <select id="add-curr" style="flex:1;">
+        <div style="display:flex; gap:5px;">
+            <input type="text" id="a-price" placeholder="قیمت" style="flex:2;">
+            <select id="a-curr" style="flex:1;">
                 <option>تومان</option><option>دینار</option><option>درهم</option><option>دلار</option>
             </select>
         </div>
-        <select id="add-country">
+        <select id="a-country">
             <option>ایران</option><option>عراق</option><option>امارات</option><option>عمان</option><option>قطر</option>
         </select>
-        <input type="file" accept="image/*" id="add-file" onchange="encodeImg(this)">
-        <textarea id="add-desc" rows="4" placeholder="توضیحات کامل..."></textarea>
-        <label style="font-size: 13px;"><input type="checkbox" id="add-is-vip"> این آگهی ویژه (VIP) شود</label>
-        <button class="btn-main" onclick="publishAd()">ارسال برای تایید مدیر</button>
+        <input type="file" accept="image/*" onchange="upImg(this)">
+        <textarea id="a-desc" placeholder="توضیحات و شماره تماس..."></textarea>
+        <button class="btn" id="send-btn" onclick="send()">ارسال برای تایید مدیر</button>
     </div>
 
-    <div id="page-vip" class="page" style="padding: 20px; text-align: center;">
-        <i class="fas fa-crown fa-3x" style="color:var(--vip)"></i>
-        <h2>ارتقای حساب به VIP</h2>
-        <div class="ad-card" style="padding: 15px; border: 2px solid var(--vip);">
-            <h3>۱ ماهه</h3>
-            <p>مشاهده آگهی‌ها در صدر لیست</p>
-            <button class="btn-main" style="background:var(--vip); color:black;">خرید ۵ دلار</button>
-        </div>
-        <div class="ad-card" style="padding: 15px;">
-            <h3>۳ ماهه (تخفیف ویژه)</h3>
-            <button class="btn-main">خرید ۱۲ دلار</button>
-        </div>
+    <div id="p-tools" class="page">
+        <h3>💱 مبدل ارز هوشمند</h3>
+        <input type="number" id="v" placeholder="مقدار را وارد کنید...">
+        <select id="t">
+            <option value="45">تومان به دینار عراق</option>
+            <option value="18000">درهم امارات به تومان</option>
+        </select>
+        <button class="btn" onclick="calc()">محاسبه تبدیل</button>
+        <h2 id="res" style="text-align:center; color:var(--p)"></h2>
     </div>
 
-    <div id="page-admin" class="page" style="padding: 20px;">
-        <h2>پنل تایید آگهی</h2>
+    <div id="p-admin" class="page">
+        <h3>🛡️ تایید آگهی‌های جدید</h3>
         <div id="admin-list"></div>
     </div>
 
     <nav class="nav">
-        <div class="nav-item active" onclick="showPage('home', this)"><i class="fas fa-th-large fa-lg"></i><br>ویترین</div>
-        <div class="nav-item" onclick="showPage('add', this)"><i class="fas fa-plus-circle fa-lg"></i><br>ثبت آگهی</div>
-        <div class="nav-item" onclick="toggleTools()"><i class="fas fa-exchange-alt fa-lg"></i><br>تبدیل ارز</div>
-        <div class="nav-item" onclick="showPage('vip', this)"><i class="fas fa-crown fa-lg"></i><br>ویژه</div>
-        <div class="nav-item" onclick="showPage('admin', this)"><i class="fas fa-user-shield fa-lg"></i><br>مدیریت</div>
+        <div class="nav-item active" onclick="tab('home',this)"><i class="fa fa-home fa-lg"></i><br>ویترین</div>
+        <div class="nav-item" onclick="tab('add',this)"><i class="fa fa-plus-circle fa-lg"></i><br>ثبت آگهی</div>
+        <div class="nav-item" onclick="tab('tools',this)"><i class="fa fa-exchange-alt fa-lg"></i><br>ارز</div>
+        <div class="nav-item" onclick="tab('admin',this)"><i class="fa fa-user-shield fa-lg"></i><br>مدیریت</div>
     </nav>
 
     <script>
         const tg = window.Telegram.WebApp;
-        let userId = 0, userName = "Guest", b64Img = "";
+        let uid = 0, imgB64 = "";
+
+        // برای اینکه دکمه‌ها در گوشی کار کنند، باید آدرس کامل ورکر را اینجا بگذارید
+        const API_BASE = window.location.origin;
 
         async function init() {
             tg.expand();
-            userId = tg.initDataUnsafe?.user?.id || 999;
-            userName = tg.initDataUnsafe?.user?.first_name || "کاربر";
+            uid = tg.initDataUnsafe?.user?.id || 12345;
             
-            const res = await fetch('/api/init', {
+            await fetch(API_BASE + '/api/init', {
                 method: 'POST',
-                body: JSON.stringify({id: userId, user: userName})
+                body: JSON.stringify({ id: uid, user: tg.initDataUnsafe?.user?.first_name })
             });
-            const userData = await res.json();
-            document.getElementById('user-badge').innerText = userData.is_vip ? "VIP Member 👑" : "کاربر عادی";
             loadAds();
         }
 
         async function loadAds() {
-            const res = await fetch('/api/get-ads');
+            const res = await fetch(API_BASE + '/api/get-ads');
             const ads = await res.json();
-            const container = document.getElementById('ad-container');
-            container.innerHTML = ads.map(ad => \`
+            document.getElementById('ad-list').innerHTML = ads.map(a => \`
                 <div class="ad-card">
-                    \${ad.is_featured ? '<span class="badge-vip">ویژه ★</span>' : ''}
-                    <img src="\${ad.image_base64}" class="ad-img">
-                    <div class="ad-info">
-                        <div style="font-size:12px; color:#888;">\${ad.category} | \${ad.country}</div>
-                        <div style="font-weight:bold; margin:5px 0;">\${ad.title}</div>
-                        <div class="price-tag">\${ad.price} \${ad.currency}</div>
+                    <img src="\${a.image_base64}" class="ad-img">
+                    <div class="ad-body">
+                        <small style="color:#888">\${a.category} | \${a.country}</small>
+                        <div style="font-weight:bold; margin:5px 0;">\${a.title}</div>
+                        <div class="price">\${a.price} \${a.currency}</div>
                     </div>
                 </div>
-            \`).join('');
+            \`).join('') || "آگهی فعالی وجود ندارد.";
         }
 
-        function encodeImg(el) {
+        function upImg(el) {
             const reader = new FileReader();
-            reader.onload = (e) => b64Img = e.target.result;
+            reader.onload = (e) => imgB64 = e.target.result;
             reader.readAsDataURL(el.files[0]);
         }
 
-        async function publishAd() {
-            const data = {
-                uid: userId,
-                title: document.getElementById('add-title').value,
-                cat: document.getElementById('add-cat').value,
-                price: document.getElementById('add-price').value,
-                curr: document.getElementById('add-curr').value,
-                country: document.getElementById('add-country').value,
-                city: 'Global',
-                desc: document.getElementById('add-desc').value,
-                img: b64Img,
-                vip: document.getElementById('add-is-vip').checked ? 1 : 0
-            };
-            await fetch('/api/submit-ad', { method: 'POST', body: JSON.stringify(data) });
-            alert("آگهی ثبت و پس از تایید مدیر منتشر می‌شود.");
-            showPage('home', document.querySelector('.nav-item'));
+        async function send() {
+            if(!imgB64 || !document.getElementById('a-title').value) return alert("تکمیل عنوان و عکس الزامی است");
+            document.getElementById('send-btn').innerText = "در حال ارسال...";
+            
+            await fetch(API_BASE + '/api/submit-ad', {
+                method: 'POST',
+                body: JSON.stringify({
+                    uid: uid, title: document.getElementById('a-title').value,
+                    cat: document.getElementById('a-cat').value, price: document.getElementById('a-price').value,
+                    curr: document.getElementById('a-curr').value, country: document.getElementById('a-country').value,
+                    city: 'Global', desc: document.getElementById('a-desc').value, img: imgB64
+                })
+            });
+            alert("ارسال شد! پس از تایید مدیر نمایش داده می‌شود.");
+            location.reload();
         }
 
-        // سیستم مدیریت (Admin)
+        function calc() {
+            const val = document.getElementById('v').value;
+            const rate = document.getElementById('t').value;
+            document.getElementById('res').innerText = (val / rate).toFixed(2);
+        }
+
         async function loadAdmin() {
-            const res = await fetch('/api/admin/pending');
+            const res = await fetch(API_BASE + '/api/admin/pending');
             const ads = await res.json();
-            document.getElementById('admin-list').innerHTML = ads.map(ad => \`
-                <div class="ad-card" style="padding:10px;">
-                    <b>\${ad.title}</b>
-                    <button onclick="adminAction(\${ad.id}, 'active')" style="background:green; color:white;">تایید</button>
-                    <button onclick="adminAction(\${ad.id}, 'rejected')" style="background:red; color:white;">حذف</button>
+            document.getElementById('admin-list').innerHTML = ads.map(a => \`
+                <div style="background:white; padding:10px; margin-bottom:5px; border-radius:10px;">
+                    <b>\${a.title}</b><br>
+                    <button class="admin-btn" style="background:green" onclick="adm(\${a.id},'active')">تایید</button>
+                    <button class="admin-btn" style="background:red" onclick="adm(\${a.id},'rejected')">رد</button>
                 </div>
-            \`).join('');
+            \`).join('') || "آگهی در انتظار تایید نیست.";
         }
 
-        async function adminAction(id, action) {
-            await fetch('/api/admin/approve', { method:'POST', body: JSON.stringify({id, action}) });
+        async function adm(id, act) {
+            await fetch(API_BASE + '/api/admin/approve', {
+                method: 'POST',
+                body: JSON.stringify({ id, action: act })
+            });
             loadAdmin();
         }
 
-        // ابزارها
-        function toggleTools() {
-            const box = document.getElementById('tool-box');
-            box.style.display = box.style.display === 'block' ? 'none' : 'block';
-        }
-
-        function convertCurr() {
-            const val = document.getElementById('conv-val').value;
-            const type = document.getElementById('conv-type').value;
-            let res = 0;
-            if(type === 'تومان-دینار') res = val / 45; // مثال
-            else res = val * 18000;
-            document.getElementById('conv-res').innerText = "نتیجه تقریبی: " + res.toFixed(2);
-        }
-
-        function showPage(p, el) {
-            document.querySelectorAll('.page').forEach(x => x.classList.remove('active-page'));
-            document.getElementById('page-' + p).classList.add('active-page');
+        function tab(p, el) {
+            document.querySelectorAll('.page').forEach(x => x.classList.remove('active'));
+            document.getElementById('p-' + p).classList.add('active');
             document.querySelectorAll('.nav-item').forEach(x => x.classList.remove('active'));
             el.classList.add('active');
             if(p === 'admin') loadAdmin();
+            if(p === 'home') loadAds();
         }
 
         window.onload = init;
