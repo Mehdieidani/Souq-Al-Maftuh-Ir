@@ -1,8 +1,9 @@
 {
-  "name": "proxytelegram12",
-  "version": "1.0.0",
+  "private": true,
   "devDependencies": {
-    "wrangler": "^3.0.0"
+    "wrangler": "latest"
   },
-  "private": true
+  "scripts": {
+    "deploy": "wrangler deploy"
+  }
 }
