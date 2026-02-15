@@ -1,1 +1,8 @@
-{"name": "souq-bot", "devDependencies": {"wrangler": "^3.0.0"}}
+{
+  "name": "proxytelegram12",
+  "version": "1.0.0",
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  },
+  "private": true
+}
