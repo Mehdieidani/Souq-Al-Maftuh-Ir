@@ -8,29 +8,32 @@ export default {
         const chatId = data.message?.chat?.id;
 
         if (chatId) {
-          const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+          const url = "https://api.telegram.org/bot" + botToken + "/sendMessage";
           await fetch(url, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               chat_id: chatId,
-              text: "✅ سیستم Souq فعال شد!\nبرای ورود به مینی‌اپ دکمه زیر را لمس کنید:",
+              text: "✅ بازار Souq آماده استفاده است!\nبرای ورود، دکمه زیر را بزنید:",
               reply_markup: {
                 inline_keyboard: [[
-                  { text: "🛍️ ورود به بازار", web_app: { url: "https://proxytelegram12.mehdi11eidani.workers.dev/" } }
+                  { 
+                    text: "🛍️ ورود به مینی‌اپ", 
+                    web_app: { url: "https://proxytelegram12.mehdi11eidani.workers.dev/" } 
+                  }
                 ]]
               }
             }),
           });
         }
       } catch (e) {
-        return new Response("OK");
+        return new Response("Error");
       }
       return new Response("OK");
     }
 
-    return new Response(`<html><body style="text-align:center;font-family:tahoma;"><h1>Souq Active ✅</h1></body></html>`, {
-      headers: { "Content-Type": "text/html;charset=utf-8" }
+    return new Response("Worker is running!", {
+      headers: { "Content-Type": "text/plain" }
     });
   }
 };
