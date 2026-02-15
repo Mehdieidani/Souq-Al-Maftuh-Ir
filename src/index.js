@@ -3,16 +3,19 @@ export default {
     if (request.method === "POST") {
       try {
         const payload = await request.json();
-        if (payload.message && payload.message.chat) {
+        
+        if (payload && payload.message && payload.message.chat) {
           const chatId = payload.message.chat.id;
           const userText = payload.message.text || "";
 
-          // ذخیره در دیتابیس D1 شما
-          await env.DB.prepare(
-            "INSERT OR IGNORE INTO users (user_id, last_message) VALUES (?, ?)"
-          ).bind(chatId, userText).run();
+          // ذخیره در دیتابیس D1
+          if (env.DB) {
+            await env.DB.prepare(
+              "INSERT OR IGNORE INTO users (user_id, last_message) VALUES (?, ?)"
+            ).bind(chatId.toString(), userText).run();
+          }
 
-          // توکن تلگرام شما
+          // توکن ربات تلگرام شما
           const botToken = "7721832049:AAH1W8N_hO69p98v1u-6f5h-z4l8m2nQ"; 
           const url = https://api.telegram.org/bot${botToken}/sendMessage;
           
@@ -25,8 +28,9 @@ export default {
             }),
           });
         }
+        return new Response("OK", { status: 200 });
       } catch (err) {
-        return new Response("Error: " + err.message);
+        return new Response("Error: " + err.message, { status: 500 });
       }
     }
     return new Response("Worker is active!");
