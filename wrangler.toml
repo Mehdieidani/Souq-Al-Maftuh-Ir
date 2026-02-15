@@ -1,3 +1,7 @@
 name = "proxytelegram12"
 main = "src/index.js"
 compatibility_date = "2024-01-01"
+
+[vars]
+BOT_TOKEN = "8587925383:AAElQXNbZ8YIDJMWwX4YyVFMCOsC2pV6H6c"
+MINI_APP_URL = "https://proxytelegram12.mehdi11eidani.workers.dev/"
