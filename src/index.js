@@ -1,62 +1,54 @@
 export default {
   async fetch(request, env) {
+    const botToken = "8587925383:AAElQXNbZ8YIDJMWwX4YyVFMCOsC2pV6H6c";
+
+    // بررسی اینکه آیا درخواست از طرف تلگرام است (POST)
     if (request.method === "POST") {
       try {
-        const payload = await request.json();
+        const data = await request.json();
         
-        if (payload && payload.message && payload.message.chat) {
-          const chatId = payload.message.chat.id;
-          const userText = payload.message.text || "";
+        // پیدا کردن Chat ID در هر نوع پیامی (متن یا استارت)
+        const chatId = data.message?.chat?.id || data.callback_query?.message?.chat?.id;
 
-          // ۱. ذخیره در دیتابیس Cloudflare D1
-          try {
-            if (env.DB) {
-              await env.DB.prepare(
-                "INSERT OR IGNORE INTO users (user_id, last_message) VALUES (?, ?)"
-              ).bind(chatId.toString(), userText).run();
-            }
-          } catch (dbError) {
-            console.error("D1 Error:", dbError.message);
-          }
-
-          // ۲. مشخصات ربات و لینک مینی‌اپ
-          const botToken = "8587925383:AAElQXNbZ8YIDJMWwX4YyVFMCOsC2pV6H6c";
-          const miniAppUrl = "https://proxytelegram12.mehdi11eidani.workers.dev/"; // آدرس مینی‌اپ شما
+        if (chatId) {
+          const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
           
-          const telegramUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
-          
-          // ۳. ارسال پاسخ به همراه دکمه مینی‌اپ
-          await fetch(telegramUrl, {
+          await fetch(url, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               chat_id: chatId,
-              text: "سلام به بازار Souq خوش آمدید! 🛒\nبرای ثبت آگهی یا مشاهده محصولات، روی دکمه زیر کلیک کنید:",
+              text: "🎊 تبریک! ربات Souq بیدار شد.\n\nمن پیام شما را دریافت کردم. برای باز کردن مینی‌اپ روی دکمه زیر بزنید:",
               reply_markup: {
                 inline_keyboard: [[
                   { 
-                    text: "ورود به مینی‌اپ 🛍️", 
-                    web_app: { url: miniAppUrl } 
+                    text: "🛍️ ورود به بازار Souq", 
+                    web_app: { url: "https://proxytelegram12.mehdi11eidani.workers.dev/" } 
                   }
                 ]]
               }
             }),
           });
         }
-        return new Response("OK", { status: 200 });
-      } catch (err) {
-        return new Response("Error: " + err.message, { status: 500 });
+      } catch (e) {
+        // اگر خطایی رخ داد، لاگ بگیر (در پنل کلودفلر قابل مشاهده است)
+        return new Response("Error: " + e.message, { status: 200 });
       }
+      return new Response("OK", { status: 200 });
     }
-    
-    // ظاهر ساده برای وقتی که لینک ورکر را در مرورگر باز می‌کنید
+
+    // ظاهر مینی‌اپ برای نمایش در مرورگر یا داخل تلگرام
     return new Response(`
-      <html>
-        <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
-          <h1>Souq Mini App Server</h1>
-          <p style="color: green;">Worker is Active and Running! ✅</p>
+      <!DOCTYPE html>
+      <html dir="rtl">
+        <head><meta charset="UTF-8"></head>
+        <body style="text-align:center; font-family:tahoma; padding-top:50px; background:#f0f0f0;">
+          <h1>🛍️ مینی‌اپ بازار Souq</h1>
+          <p>سیستم فعال است. لطفاً از داخل تلگرام امتحان کنید.</p>
+          <button style="padding:10px 20px; background:#0088cc; color:#fff; border:none; border-radius:5px;">نسخه ۱.۰</button>
         </body>
-      </html>
-    `, { headers: { "Content-Type": "text/html" } });
-  },
+      </html>`, 
+      { headers: { "Content-Type": "text/html;charset=utf-8" } }
+    );
+  }
 };
