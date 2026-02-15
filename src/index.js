@@ -8,24 +8,38 @@ export default {
           const chatId = payload.message.chat.id;
           const userText = payload.message.text || "";
 
-          // تلاش برای ذخیره در دیتابیس
+          // ۱. ذخیره در دیتابیس Cloudflare D1
           try {
-            await env.DB.prepare(
-              "INSERT OR IGNORE INTO users (user_id, last_message) VALUES (?, ?)"
-            ).bind(chatId.toString(), userText).run();
+            if (env.DB) {
+              await env.DB.prepare(
+                "INSERT OR IGNORE INTO users (user_id, last_message) VALUES (?, ?)"
+              ).bind(chatId.toString(), userText).run();
+            }
           } catch (dbError) {
-            console.error("Database Error:", dbError.message);
+            console.error("D1 Error:", dbError.message);
           }
 
-          const botToken = "7721832049:AAH1W8N_hO69p98v1u-6f5h-z4l8m2nQ"; 
-          const url = "https://api.telegram.org/bot" + botToken + "/sendMessage";
+          // ۲. مشخصات ربات و لینک مینی‌اپ
+          const botToken = "8587925383:AAElQXNbZ8YIDJMWwX4YyVFMCOsC2pV6H6c";
+          const miniAppUrl = "https://proxytelegram12.mehdi11eidani.workers.dev/"; // آدرس مینی‌اپ شما
           
-          await fetch(url, {
+          const telegramUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
+          
+          // ۳. ارسال پاسخ به همراه دکمه مینی‌اپ
+          await fetch(telegramUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               chat_id: chatId,
-              text: "پیام شما در سیستم Souq ثبت شد! :white_check_mark:",
+              text: "سلام به بازار Souq خوش آمدید! 🛒\nبرای ثبت آگهی یا مشاهده محصولات، روی دکمه زیر کلیک کنید:",
+              reply_markup: {
+                inline_keyboard: [[
+                  { 
+                    text: "ورود به مینی‌اپ 🛍️", 
+                    web_app: { url: miniAppUrl } 
+                  }
+                ]]
+              }
             }),
           });
         }
@@ -34,6 +48,15 @@ export default {
         return new Response("Error: " + err.message, { status: 500 });
       }
     }
-    return new Response("Worker is active!");
+    
+    // ظاهر ساده برای وقتی که لینک ورکر را در مرورگر باز می‌کنید
+    return new Response(`
+      <html>
+        <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
+          <h1>Souq Mini App Server</h1>
+          <p style="color: green;">Worker is Active and Running! ✅</p>
+        </body>
+      </html>
+    `, { headers: { "Content-Type": "text/html" } });
   },
 };
