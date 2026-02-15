@@ -17,7 +17,7 @@ export default {
 
           // توکن ربات تلگرام شما
           const botToken = "7721832049:AAH1W8N_hO69p98v1u-6f5h-z4l8m2nQ"; 
-          const url = https://api.telegram.org/bot${botToken}/sendMessage;
+          const url = https://api.telegram.org/bot${botToken}/sendMessage`;
           
           await fetch(url, {
             method: "POST",
