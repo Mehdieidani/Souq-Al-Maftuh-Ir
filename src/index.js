@@ -8,23 +8,24 @@ export default {
           const chatId = payload.message.chat.id;
           const userText = payload.message.text || "";
 
-          // ذخیره در دیتابیس D1
-          if (env.DB) {
+          // تلاش برای ذخیره در دیتابیس
+          try {
             await env.DB.prepare(
               "INSERT OR IGNORE INTO users (user_id, last_message) VALUES (?, ?)"
             ).bind(chatId.toString(), userText).run();
+          } catch (dbError) {
+            console.error("Database Error:", dbError.message);
           }
 
-          // توکن ربات تلگرام شما
           const botToken = "7721832049:AAH1W8N_hO69p98v1u-6f5h-z4l8m2nQ"; 
-          const url = https://api.telegram.org/bot${botToken}/sendMessage`;
+          const url = "https://api.telegram.org/bot" + botToken + "/sendMessage";
           
           await fetch(url, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               chat_id: chatId,
-              text: "پیام شما در سیستم Souq ثبت شد! ✅",
+              text: "پیام شما در سیستم Souq ثبت شد! :white_check_mark:",
             }),
           });
         }
