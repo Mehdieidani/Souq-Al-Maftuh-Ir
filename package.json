@@ -1,3 +1,11 @@
-name = "proxytelegram12"
-main = "src/index.js"
-compatibility_date = "2024-01-01"
+{
+  "name": "proxytelegram12",
+  "version": "1.0.0",
+  "devDependencies": {
+    "wrangler": "latest"
+  },
+  "private": true,
+  "scripts": {
+    "deploy": "wrangler deploy"
+  }
+}
