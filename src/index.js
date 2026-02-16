@@ -1,5 +1,5 @@
 const CONFIG = {
-    admins: [8587925383], // آیدی خودت
+    admins: [6522877528], // آیدی خودت
     primaryColor: "#007aff",
     supportUsername: "YourSupportID", // آیدی تلگرام پشتیبانی بدون @
     appName: "SOUQ PRO"
