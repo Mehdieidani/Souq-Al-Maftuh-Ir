@@ -7,9 +7,9 @@ const CONFIG = {
 };
 
 const COUNTRIES = {
-    "🇮🇷 ایران": { currency: "تومان", cities: ["تهران", "مشهد", "اصفهان", "کرج", "شیراز", "تبریز", "اهواز", "قم", "کرمانشاه", "ارومیه", "رشت", "زاهدان", "همدان", "کرمان", "یزد", "اردبیل", "بندرعباس", "اراک", "زنجان", "سنندج", "قزوین", "خرم‌آباد", "گرگان", "ساری", "بوشهر", "بیرجند", "ایلام", "شهرکرد", "سمنان", "یاسوج"] },
-    "🇮🇶 عراق": { currency: "دینار", cities: ["بغداد", "البصرة", "الموصل", "أربيل", "كركوك", "النجف", "كربلاء", "السليمانية"] },
-    "🇹🇷 تركيا": { currency: "ليرة", cities: ["إسطنبول", "أنقرة", "إزمير", "بورصة", "أنطاليا"] }
+    "🇮🇷 ایران": { currency: "تومان", cities: ["تهران", "مشهد", "اصفهان"] },
+    "🇮🇶 عراق": { currency: "دینار", cities: ["بغداد", "البصرة"] },
+    "🇹🇷 تركيا": { currency: "ليرة", cities: ["إسطنبول", "أنقرة"] }
 };
 
 export default {
@@ -26,7 +26,7 @@ export default {
             try {
                 const update = await request.json();
 
-                // مدیریت دکمه‌های شیشه‌ای
+                // مدیریت دکمه‌های شیشه‌ای (Inline)
                 if (update.callback_query) {
                     const data = update.callback_query.data;
                     const chatId = update.callback_query.message.chat.id;
@@ -34,10 +34,6 @@ export default {
                     if (data === "start_free" || data === "start_premium") {
                         await updateState(chatId, "GET_TITLE", { ad_type: data.includes("premium") ? "premium" : "free", images: [] }, DB);
                         await sendMessage(chatId, "🔹 لطفا **عنوان آگهی** خود را بنویسید:", BOT_TOKEN);
-                    } else if (data.startsWith('approve_')) {
-                        const id = data.split('_')[1];
-                        await DB.prepare("UPDATE ads SET status = 'active' WHERE id = ?").bind(id).run();
-                        await sendMessage(chatId, "✅ آگهی تایید شد.", BOT_TOKEN);
                     }
                     return new Response("OK");
                 }
@@ -56,16 +52,10 @@ export default {
                 const state = user?.state || "IDLE";
                 let tempData = JSON.parse(user?.temp_data || "{}");
 
-                // ثبت عنوان
                 if (state === "GET_TITLE" && text) {
                     tempData.title = text;
                     await updateState(chatId, "GET_COUNTRY", tempData, DB);
                     return await sendKeyboard(chatId, "🌍 کشور را انتخاب کنید:", Object.keys(COUNTRIES), BOT_TOKEN);
-                }
-
-                // سایر مراحل به همین ترتیب... (خلاصه شده برای تست دکمه)
-                if (text === "☎️ پشتیبانی") {
-                    return await sendMessage(chatId, `👤 پشتیبانی: @${CONFIG.supportUsername}`, BOT_TOKEN);
                 }
 
             } catch (e) { return new Response("OK"); }
@@ -75,6 +65,18 @@ export default {
 };
 
 async function sendMainMenu(chatId, token, host) {
+    // حذف کیبورد معمولی قبلی به صورت اجباری
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ 
+            chat_id: chatId, 
+            text: "🔄 در حال بارگذاری منوی جدید...", 
+            reply_markup: { remove_keyboard: true } 
+        })
+    });
+
+    // ارسال دکمه‌های شیشه‌ای (که غیب نمی‌شوند)
     const inlineKeyboard = {
         inline_keyboard: [
             [{ text: "🛍 ورود به ویترین بازار", web_app: { url: `https://${host}` } }],
@@ -82,12 +84,17 @@ async function sendMainMenu(chatId, token, host) {
             [{ text: "☎️ پشتیبانی", url: `https://t.me/Mehdi_E_admin` }]
         ]
     };
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+
+    return await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ chat_id: chatId, text: "👋 خوش آمدید! برای شروع یکی از گزینه‌های زیر را بزنید:", reply_markup: inlineKeyboard })
+        body: JSON.stringify({ 
+            chat_id: chatId, 
+            text: "👋 **به پلتفرم خوش آمدید**\nلطفاً یکی از گزینه‌های زیر را انتخاب کنید:", 
+            reply_markup: inlineKeyboard,
+            parse_mode: "Markdown"
+        })
     });
-    return new Response("OK");
 }
 
 async function updateState(uid, state, data, DB) {
@@ -101,7 +108,6 @@ async function sendMessage(chatId, text, token) {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ chat_id: chatId, text, parse_mode: "Markdown" })
     });
-    return new Response("OK");
 }
 
 async function sendKeyboard(chatId, text, buttons, token) {
@@ -111,7 +117,6 @@ async function sendKeyboard(chatId, text, buttons, token) {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ chat_id: chatId, text, reply_markup: { keyboard, resize_keyboard: true, one_time_keyboard: true } })
     });
-    return new Response("OK");
 }
 
-function generateHTML(cfg) { return `<html><body><h1>${cfg.appName}</h1></body></html>`; }
+function generateHTML(cfg) { return `<html><body style="text-align:center"><h1>${cfg.appName}</h1></body></html>`; }
