@@ -1,5 +1,5 @@
 const CONFIG = {
-    admins: [8587925383], // آیدی خودت را چک کن
+    admins: [6522877528], // آیدی خودت را چک کن
     primaryColor: "#007aff"
 };
 
