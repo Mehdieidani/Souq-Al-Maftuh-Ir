@@ -167,7 +167,7 @@ async function sendMainMenu(chatId, token, host) {
         resize_keyboard: true,
         persistent: true
     };
-    return await sendMessage(chatId, "👋 به بازار بزرگ خوش آمدید.\nیکی از گزینه‌ها را انتخاب کنید:", token, keyboard);
+    return await sendMessage(chatId, "👋 به السوق المفتوح +ایران خوش آمدید.\nیکی از گزینه‌ها را انتخاب کنید:", token, keyboard);
 }
 
 function generateHTML(cfg) {
