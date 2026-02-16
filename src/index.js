@@ -1,95 +1,87 @@
+import { SOUQ_SETTINGS as config } from './SOUQ_CORE.js';
+
 export default {
   async fetch(request, env) {
     const { DB, BOT_TOKEN } = env;
     const url = new URL(request.url);
 
-    // تنظیمات سربرگ برای ارتباط مینی‌اپ
     const corsHeaders = {
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
       "Content-Type": "application/json;charset=UTF-8"
     };
 
-    if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
-
-    // --- بخش اول: زنده کردن ربات (Webhook) ---
-    if (request.method === "POST" && !url.pathname.startsWith("/api/")) {
-      try {
+    try {
+      // --- ۱. بخش تلگرام (ثابت و ایمن) ---
+      if (request.method === "POST" && !url.pathname.startsWith("/api/")) {
         const update = await request.json();
-        if (update.message) {
-          const chatId = update.message.chat.id;
-          
-          // ارسال پیام خوش‌آمدگویی با دکمه مینی‌اپ
-          const botResponse = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+        if (update.message?.text === "/start") {
+          await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              chat_id: chatId,
-              text: "✅ سیستم فعال شد!\nبرای ورود به بازار و مدیریت آگهی‌ها از دکمه زیر استفاده کنید:",
+              chat_id: update.message.chat.id,
+              text: `🌹 به ${config.identity.appName} خوش آمدید\n\nامروز چه کمکی از دست ما برمی‌آید؟`,
               reply_markup: {
-                inline_keyboard: [[
-                  { text: "🚀 ورود به مینی‌اپ SOUQ", web_app: { url: `https://${url.hostname}` } }
-                ]]
+                inline_keyboard: [[{ text: "🚀 باز کردن اپلیکیشن", web_app: { url: `https://${url.hostname}` } }]]
               }
             })
           });
-
-          // اگر ارسال پیام به تلگرام خطا داشت، اینجا متوجه می‌شویم
-          if (!botResponse.ok) {
-            console.error("Telegram API Error:", await botResponse.text());
-          }
         }
-      } catch (e) {
-        console.error("Webhook Logic Error:", e.message);
-      }
-      return new Response("OK", { status: 200 }); // تلگرام همیشه باید OK بگیره
-    }
-
-    // --- بخش دوم: APIهای دیتابیس ---
-    try {
-      if (url.pathname === "/api/init") {
-        const body = await request.json();
-        await DB.prepare("INSERT OR IGNORE INTO users (user_id, username) VALUES (?, ?)")
-          .bind(Number(body.id), body.user || 'Guest').run();
-        return Response.json({ success: true }, { headers: corsHeaders });
+        return new Response("OK");
       }
 
+      // --- ۲. بخش API (هماهنگ با ریموت کنترل) ---
       if (url.pathname === "/api/get-ads") {
         const { results } = await DB.prepare("SELECT * FROM ads WHERE status = 'active' ORDER BY id DESC").all();
-        return Response.json(results || [], { headers: corsHeaders });
+        return Response.json(results, { headers: corsHeaders });
       }
 
-      if (url.pathname === "/api/submit-ad") {
-        const d = await request.json();
-        await DB.prepare("INSERT INTO ads (user_id, title, category, price, currency, country, image_base64, description, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')")
-          .bind(Number(d.uid), d.title, d.cat, d.price, d.curr, d.country, d.img, d.desc).run();
-        return Response.json({ success: true }, { headers: corsHeaders });
+      if (url.pathname === "/api/config") {
+        return Response.json(config, { headers: corsHeaders });
       }
 
-      // بخش مدیریت: لیست آگهی‌های در انتظار تایید
-      if (url.pathname === "/api/admin/list") {
-        const { results } = await DB.prepare("SELECT * FROM ads WHERE status = 'pending'").all();
-        return Response.json(results || [], { headers: corsHeaders });
-      }
+      // --- ۳. بخش ظاهر (رندرینگ هوشمند) ---
+      const html = `
+      <!DOCTYPE html>
+      <html lang="fa" dir="rtl">
+      <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+          <script src="https://telegram.org/js/telegram-web-app.js"></script>
+          <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+          <style>
+              body { font-family: ${config.ui.fontFamily}; background: ${config.ui.bgColor}; margin: 0; padding-bottom: 70px; }
+              .header { background: ${config.ui.primaryColor}; color: white; padding: 15px; text-align: center; font-weight: bold; }
+              .btn-primary { background: ${config.ui.primaryColor}; color: white; border: none; padding: 12px; border-radius: 10px; width: 100%; font-weight: bold; }
+              .nav-item.active { color: ${config.ui.primaryColor}; }
+              .vip-tag { color: ${config.ui.vipColor}; font-weight: bold; }
+              /* استایل‌های دیگر... */
+          </style>
+      </head>
+      <body>
+          <div class="header">${config.identity.appName}</div>
+          <div id="app"></div>
+          
+          <script>
+              const tg = window.Telegram.WebApp;
+              const adminList = ${JSON.stringify(config.security?.admins || [])};
+              
+              function init() {
+                  tg.expand();
+                  // اگر کاربر مدیر بود، تب مدیریت را نشان بده
+                  if (adminList.includes(tg.initDataUnsafe?.user?.id)) {
+                      document.getElementById('admin-tab').style.display = 'block';
+                  }
+              }
+              window.onload = init;
+          </script>
+      </body>
+      </html>`;
 
-      // بخش مدیریت: تایید یا رد
-      if (url.pathname === "/api/admin/action") {
-        const { id, status } = await request.json();
-        await DB.prepare("UPDATE ads SET status = ? WHERE id = ?").bind(status, id).run();
-        return Response.json({ success: true }, { headers: corsHeaders });
-      }
+      return new Response(html, { headers: { "Content-Type": "text/html;charset=UTF-8" } });
 
     } catch (e) {
-      if (url.pathname.startsWith("/api/")) {
-        return Response.json({ error: e.message }, { headers: corsHeaders });
-      }
+      return new Response("Error: " + e.message, { status: 200 });
     }
-
-    // --- بخش سوم: ظاهر مینی‌اپ (HTML) ---
-    // (همان کد HTML قبلی با منوی مدیریت و ویترین)
-    const html = `... (کدهای HTML شامل اسکریپت‌های تب‌بندی و fetch) ...`; 
-    // نکته: برای جلوگیری از طولانی شدن، کد HTML کامل رو در پیام قبلی داشتی.
-    return new Response(html, { headers: { "Content-Type": "text/html;charset=UTF-8" } });
   }
 };
