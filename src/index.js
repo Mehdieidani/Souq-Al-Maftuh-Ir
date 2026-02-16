@@ -149,7 +149,6 @@ async function sendKeyboard(chatId, text, buttons, token, columns = 2) {
     await fetch(`https://api.telegram.org/bot${token}/sendMessage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, text, reply_markup: { keyboard, resize_keyboard: true, one_time_keyboard: true } })});
     return new Response("OK");
 }
-
 async function sendMainMenu(chatId, token, host) {
     const keyboard = {
         keyboard: [
@@ -157,9 +156,13 @@ async function sendMainMenu(chatId, token, host) {
             [{ text: "🛍 ورود به بازار (ویترین آگهی‌ها)", web_app: { url: `https://${host}` } }],
             [{ text: "☎️ پشتیبانی" }, { text: "⭐ خرید اشتراک" }]
         ],
-        resize_keyboard: true, persistent: true
+        resize_keyboard: true,
+        one_time_keyboard: false, // تغییر به false برای ماندگاری دکمه‌ها
+        persistent: true 
     };
-    return await sendMessage(chatId, "👋 به بازار بزرگ ایران و کشورهای عربی خوش آمدید.", token, keyboard);
+    // اضافه کردن یک کد رندوم به متن پیام برای جلوگیری از کش شدن توسط تلگرام
+    const randomSuffix = Math.floor(Math.random() * 100); 
+    return await sendMessage(chatId, `👋 به بازار بزرگ خوش آمدید [${randomSuffix}] \n\nلطفاً یکی از گزینه‌های زیر را انتخاب کنید:`, token, keyboard);
 }
 
 function generateHTML(cfg) {
