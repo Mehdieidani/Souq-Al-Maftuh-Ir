@@ -1,5 +1,5 @@
 const CONFIG = {
-    admins: [8587925383], // آیدی عددی خودت را اینجا چک کن
+    admins: [6522877528], // آیدی عددی خودت را اینجا چک کن
     primaryColor: "#007aff",
     appName: "SOUQ BUILDER"
 };
